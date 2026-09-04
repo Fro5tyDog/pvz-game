@@ -1,13 +1,34 @@
-
-
-Pvz game · JSX
 import React, { useEffect, useRef, useState, useCallback } from 'react';
- 
+
 const PvZGame = () => {
+  const resetGame = () => {
+    gameRef.current = {
+      plants: [],
+      zombies: [],
+      selectedPlant: null,
+      sun: 100,
+      wave: 1,
+      waveTimer: 0,
+      zombieSpawned: 0,
+      gameState: 'playing',
+      sunDrops: [],
+      sunDropTimer: 0,
+      shooterCooldown: 0,
+      slowmoCooldown: 0,
+    };
+    setGameState('playing');
+    setSun(100);
+    setWave(1);
+    setShooterCooldown(0);
+    setSlowmoCooldown(0);
+  };
   const canvasRef = useRef(null);
   const [gameState, setGameState] = useState('playing'); // 'playing', 'won', 'lost'
   const [sun, setSun] = useState(100);
   const [wave, setWave] = useState(1);
+  const [showHPBars, setShowHPBars] = useState(true);
+  const [shooterCooldown, setShooterCooldown] = useState(0);
+  const [slowmoCooldown, setSlowmoCooldown] = useState(0);
   
   const gameRef = useRef({
     plants: [],
@@ -20,15 +41,17 @@ const PvZGame = () => {
     gameState: 'playing',
     sunDrops: [],
     sunDropTimer: 0,
+    shooterCooldown: 0,
+    slowmoCooldown: 0,
   });
- 
+
   const COLS = 5;
   const ROWS = 3;
   const CELL_WIDTH = 80;
   const CELL_HEIGHT = 100;
   const CANVAS_WIDTH = COLS * CELL_WIDTH + 20;
   const CANVAS_HEIGHT = ROWS * CELL_HEIGHT + 40;
- 
+
   const drawGame = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -37,7 +60,7 @@ const PvZGame = () => {
     // Clear canvas
     ctx.fillStyle = '#1a472a';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
- 
+
     // Draw grid
     ctx.strokeStyle = '#0d2818';
     ctx.lineWidth = 1;
@@ -53,12 +76,14 @@ const PvZGame = () => {
       ctx.lineTo(CANVAS_WIDTH - 10, row * CELL_HEIGHT + 40);
       ctx.stroke();
     }
- 
+
     // Draw plants
     gameRef.current.plants.forEach((plant) => {
-      ctx.fillStyle = plant.type === 'shooter' ? '#90EE90' : '#FFB6C1';
       const x = plant.col * CELL_WIDTH + CELL_WIDTH / 2 + 10;
       const y = plant.row * CELL_HEIGHT + CELL_HEIGHT / 2 + 40;
+      
+      // Plant body
+      ctx.fillStyle = plant.type === 'shooter' ? '#90EE90' : '#FFB6C1';
       ctx.beginPath();
       ctx.arc(x, y, 20, 0, Math.PI * 2);
       ctx.fill();
@@ -69,13 +94,43 @@ const PvZGame = () => {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(plant.type === 'shooter' ? '→' : '○', x, y);
+
+      // Draw hitbox (for reference, can be removed later)
+      if (showHPBars) {
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(x, y, 20, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Draw HP bar (only if toggled on)
+      if (showHPBars) {
+        const barWidth = 30;
+        const barHeight = 4;
+        const barX = x - barWidth / 2;
+        const barY = y - 28;
+        
+        // Background (red)
+        ctx.fillStyle = '#ff4444';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Health (green)
+        const healthPercent = plant.health / 2; // max health is 2
+        ctx.fillStyle = '#44ff44';
+        ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+      }
     });
- 
+
     // Draw zombies
     gameRef.current.zombies.forEach((zombie) => {
       ctx.fillStyle = '#8B4513';
       const y = zombie.row * CELL_HEIGHT + CELL_HEIGHT / 2 + 40;
-      ctx.fillRect(zombie.x - 15, y - 20, 30, 40);
+      
+      // Zombie body (hitbox: 30px wide, 40px tall)
+      const hitboxWidth = 30;
+      const hitboxHeight = 40;
+      ctx.fillRect(zombie.x - hitboxWidth / 2, y - hitboxHeight / 2, hitboxWidth, hitboxHeight);
       
       // Eyes
       ctx.fillStyle = '#FFF';
@@ -84,8 +139,32 @@ const PvZGame = () => {
       ctx.fillStyle = '#000';
       ctx.fillRect(zombie.x - 7, y - 11, 3, 3);
       ctx.fillRect(zombie.x + 3, y - 11, 3, 3);
+
+      // Draw hitbox outline (for reference)
+      if (showHPBars) {
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(zombie.x - hitboxWidth / 2, y - hitboxHeight / 2, hitboxWidth, hitboxHeight);
+      }
+
+      // Draw HP bar (only if toggled on)
+      if (showHPBars) {
+        const barWidth = 30;
+        const barHeight = 4;
+        const barX = zombie.x - barWidth / 2;
+        const barY = y - 22;
+        
+        // Background (red)
+        ctx.fillStyle = '#ff4444';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Health (green)
+        const healthPercent = zombie.health / 2; // max health is 2
+        ctx.fillStyle = '#44ff44';
+        ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+      }
     });
- 
+
     // Draw sun drops
     gameRef.current.sunDrops.forEach((drop) => {
       if (!drop.collected) {
@@ -95,7 +174,7 @@ const PvZGame = () => {
         gradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
         ctx.fillStyle = gradient;
         ctx.fillRect(drop.x - 35, drop.y - 35, 70, 70);
- 
+
         // Sun orb
         ctx.fillStyle = '#FFD700';
         ctx.beginPath();
@@ -109,7 +188,7 @@ const PvZGame = () => {
         ctx.fill();
       }
     });
- 
+
     // Draw projectiles
     gameRef.current.plants.forEach((plant) => {
       if (plant.projectiles) {
@@ -119,10 +198,17 @@ const PvZGame = () => {
         });
       }
     });
-  }, [CANVAS_WIDTH, CANVAS_HEIGHT, COLS, ROWS, CELL_WIDTH, CELL_HEIGHT]);
- 
+  }, [CANVAS_WIDTH, CANVAS_HEIGHT, COLS, ROWS, CELL_WIDTH, CELL_HEIGHT, showHPBars]);
+
   const updateGame = useCallback(() => {
     const g = gameRef.current;
+    
+    // Stop all game logic if lost
+    if (g.gameState === 'lost') return;
+    
+    // Decrement seed cooldowns
+    if (g.shooterCooldown > 0) g.shooterCooldown--;
+    if (g.slowmoCooldown > 0) g.slowmoCooldown--;
     
     // Spawn sun drops
     g.sunDropTimer++;
@@ -131,29 +217,27 @@ const PvZGame = () => {
       g.sunDrops.push({
         x: col * CELL_WIDTH + CELL_WIDTH / 2 + 10,
         y: 50,
-        vx: (Math.random() - 0.5) * 0.5,
         vy: 0.833, // ~2 seconds per tile (100px per 120 frames)
         life: 600, // frames until disappears
         collected: false,
       });
       g.sunDropTimer = 0;
     }
- 
+
     // Update sun drops
     g.sunDrops.forEach((drop) => {
       if (!drop.collected) {
-        drop.y += drop.vy;
-        drop.x += drop.vx;
         // Stop sun at bottom of grid
-        if (drop.y > CANVAS_HEIGHT - 60) {
+        if (drop.y >= CANVAS_HEIGHT - 60) {
           drop.y = CANVAS_HEIGHT - 60;
-          drop.vy = 0; // stop falling
+        } else {
+          drop.y += drop.vy;
         }
         drop.life--;
       }
     });
     g.sunDrops = g.sunDrops.filter(d => d.life > 0);
- 
+
     // Spawn zombies
     g.waveTimer++;
     const zombiesPerWave = 3 + g.wave;
@@ -168,15 +252,50 @@ const PvZGame = () => {
       g.zombieSpawned++;
       g.waveTimer = 0;
     }
- 
+
     // Move zombies
     g.zombies.forEach((zombie) => {
-      zombie.x -= zombie.speed;
+      // Check collision with plants
+      let collidingWithPlant = false;
+      g.plants.forEach((plant) => {
+        const plantX = plant.col * CELL_WIDTH + CELL_WIDTH / 2 + 10;
+        const plantY = plant.row * CELL_HEIGHT + CELL_HEIGHT / 2 + 40;
+        const zombieY = zombie.row * CELL_HEIGHT + CELL_HEIGHT / 2 + 40;
+        
+        // Check if zombie is in same lane as plant
+        if (zombie.row === plant.row) {
+          // Check if zombie hitbox overlaps with plant hitbox
+          const zombieLeft = zombie.x - 15;
+          const zombieRight = zombie.x + 15;
+          const plantRadius = 20;
+          const plantLeft = plantX - plantRadius;
+          const plantRight = plantX + plantRadius;
+          
+          if (zombieRight >= plantLeft && zombieLeft <= plantRight) {
+            collidingWithPlant = true;
+            // Start damaging the plant
+            plant.damageTimer = (plant.damageTimer || 0) + 1;
+            if (plant.damageTimer > 60) { // Damage every 60 frames
+              plant.health--;
+              plant.damageTimer = 0;
+            }
+          }
+        }
+      });
+      
+      // Only move if not colliding with a plant
+      if (!collidingWithPlant) {
+        zombie.x -= zombie.speed;
+        zombie.damageTimer = 0; // Reset timer when not attacking
+      }
     });
- 
+
     // Remove dead zombies
-    g.zombies = g.zombies.filter(z => z.health > 0 && z.x > 0);
- 
+    g.zombies = g.zombies.filter(z => z.health > 0);
+
+    // Remove dead plants
+    g.plants = g.plants.filter(p => p.health > 0);
+
     // Plant shooting
     g.plants.forEach((plant) => {
       if (plant.type !== 'shooter') return;
@@ -198,7 +317,7 @@ const PvZGame = () => {
         }
       }
     });
- 
+
     // Move projectiles
     g.plants.forEach((plant) => {
       if (!plant.projectiles) return;
@@ -208,9 +327,16 @@ const PvZGame = () => {
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < proj.speed) {
           plant.projectiles.splice(idx, 1);
-          // Check collision
+          // Check collision with zombie hitbox (30px wide, 40px tall)
           g.zombies.forEach((zombie) => {
-            if (Math.abs(zombie.x - proj.targetX) < 20 && zombie.row === Math.round((proj.targetY - 40) / CELL_HEIGHT)) {
+            const zombieRow = zombie.row * CELL_HEIGHT + CELL_HEIGHT / 2 + 40;
+            const zombieLeft = zombie.x - 15;
+            const zombieRight = zombie.x + 15;
+            const zombieTop = zombieRow - 20;
+            const zombieBottom = zombieRow + 20;
+            
+            if (proj.targetX >= zombieLeft && proj.targetX <= zombieRight &&
+                proj.targetY >= zombieTop && proj.targetY <= zombieBottom) {
               zombie.health--;
             }
           });
@@ -220,7 +346,7 @@ const PvZGame = () => {
         }
       });
     });
- 
+
     // Check win/lose
     if (g.zombieSpawned >= zombiesPerWave && g.zombies.length === 0) {
       g.wave++;
@@ -228,24 +354,26 @@ const PvZGame = () => {
       g.waveTimer = 0;
       setWave(g.wave);
     }
- 
+
     if (g.zombies.some(z => z.x < 10)) {
       g.gameState = 'lost';
       setGameState('lost');
     }
- 
+
     setSun(g.sun);
-  }, [ROWS, CELL_HEIGHT, CANVAS_WIDTH, CELL_WIDTH]);
- 
+    setShooterCooldown(g.shooterCooldown);
+    setSlowmoCooldown(g.slowmoCooldown);
+  }, [ROWS, CELL_HEIGHT, CANVAS_WIDTH, CELL_WIDTH, COLS]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
- 
+
     const handleClick = (e) => {
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
- 
+
       // Check for sun drop clicks (larger hitbox for easier tapping)
       for (let drop of gameRef.current.sunDrops) {
         const dist = Math.sqrt((drop.x - x) ** 2 + (drop.y - y) ** 2);
@@ -256,39 +384,41 @@ const PvZGame = () => {
           return;
         }
       }
- 
+
       const col = Math.floor((x - 10) / CELL_WIDTH);
       const row = Math.floor((y - 40) / CELL_HEIGHT);
- 
+
       if (col >= 0 && col < COLS && row >= 0 && row < ROWS) {
         const existing = gameRef.current.plants.find(p => p.col === col && p.row === row);
         if (!existing) {
-          if (gameRef.current.selectedPlant === 'shooter' && gameRef.current.sun >= 100) {
+          if (gameRef.current.selectedPlant === 'shooter' && gameRef.current.sun >= 100 && gameRef.current.shooterCooldown === 0) {
             gameRef.current.plants.push({ col, row, type: 'shooter', health: 1, shootTimer: 0 });
             gameRef.current.sun -= 100;
+            gameRef.current.shooterCooldown = 120; // 2 second cooldown (120 frames at 60fps)
             setSun(gameRef.current.sun);
-          } else if (gameRef.current.selectedPlant === 'slowmo' && gameRef.current.sun >= 75) {
+          } else if (gameRef.current.selectedPlant === 'slowmo' && gameRef.current.sun >= 75 && gameRef.current.slowmoCooldown === 0) {
             gameRef.current.plants.push({ col, row, type: 'slowmo', health: 1 });
             gameRef.current.sun -= 75;
+            gameRef.current.slowmoCooldown = 120; // 2 second cooldown
             setSun(gameRef.current.sun);
           }
         }
       }
     };
- 
+
     canvas.addEventListener('click', handleClick);
     return () => canvas.removeEventListener('click', handleClick);
   }, []);
- 
+
   useEffect(() => {
     const gameLoop = setInterval(() => {
       updateGame();
       drawGame();
     }, 1000 / 60);
- 
+
     return () => clearInterval(gameLoop);
   }, [updateGame, drawGame]);
- 
+
   return (
     <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif', backgroundColor: '#0a1f14', color: '#fff', minHeight: '100vh' }}>
       <div style={{ marginBottom: '20px' }}>
@@ -304,36 +434,54 @@ const PvZGame = () => {
               gameRef.current.selectedPlant = gameRef.current.selectedPlant === 'shooter' ? null : 'shooter';
               setGameState(gameState);
             }}
+            disabled={shooterCooldown > 0}
             style={{
               padding: '10px 15px',
-              backgroundColor: gameRef.current.selectedPlant === 'shooter' ? '#90EE90' : '#333',
-              color: '#000',
+              backgroundColor: shooterCooldown > 0 ? '#666' : (gameRef.current.selectedPlant === 'shooter' ? '#90EE90' : '#333'),
+              color: shooterCooldown > 0 ? '#999' : '#000',
               border: 'none',
               borderRadius: '4px',
-              cursor: 'pointer',
+              cursor: shooterCooldown > 0 ? 'not-allowed' : 'pointer',
+              opacity: shooterCooldown > 0 ? 0.5 : 1,
             }}
           >
-            🌻 Shooter (100)
+            🌻 Shooter (100) {shooterCooldown > 0 && `(${Math.ceil(shooterCooldown / 60)}s)`}
           </button>
           <button
             onClick={() => {
               gameRef.current.selectedPlant = gameRef.current.selectedPlant === 'slowmo' ? null : 'slowmo';
               setGameState(gameState);
             }}
+            disabled={slowmoCooldown > 0}
             style={{
               padding: '10px 15px',
-              backgroundColor: gameRef.current.selectedPlant === 'slowmo' ? '#FFB6C1' : '#333',
+              backgroundColor: slowmoCooldown > 0 ? '#666' : (gameRef.current.selectedPlant === 'slowmo' ? '#FFB6C1' : '#333'),
+              color: slowmoCooldown > 0 ? '#999' : '#000',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: slowmoCooldown > 0 ? 'not-allowed' : 'pointer',
+              opacity: slowmoCooldown > 0 ? 0.5 : 1,
+            }}
+          >
+            🌹 Slowmo (75) {slowmoCooldown > 0 && `(${Math.ceil(slowmoCooldown / 60)}s)`}
+          </button>
+          <button
+            onClick={() => setShowHPBars(!showHPBars)}
+            style={{
+              padding: '10px 15px',
+              backgroundColor: showHPBars ? '#66BB6A' : '#333',
               color: '#000',
               border: 'none',
               borderRadius: '4px',
               cursor: 'pointer',
+              marginLeft: 'auto',
             }}
           >
-            🌹 Slowmo (75)
+            {showHPBars ? '❤️ HP Bars: ON' : '❤️ HP Bars: OFF'}
           </button>
         </div>
       </div>
- 
+
       <canvas
         ref={canvasRef}
         width={CANVAS_WIDTH}
@@ -345,22 +493,21 @@ const PvZGame = () => {
           marginBottom: '20px',
         }}
       />
- 
+
       {gameState === 'lost' && (
         <div style={{ fontSize: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
-          Game Over! Zombies reached your house.
-          <button onClick={() => window.location.reload()} style={{ marginLeft: '10px', padding: '10px' }}>
+          Game Over! You were defeated.
+          <button onClick={resetGame} style={{ marginLeft: '10px', padding: '10px' }}>
             Restart
           </button>
         </div>
       )}
- 
+
       <p style={{ fontSize: '12px', color: '#aaa' }}>
         Click a plant button to select it, then click on the grid to place. Shooter plants shoot zombies; slowmo plants slow them down (coming soon!).
       </p>
     </div>
   );
 };
- 
+
 export default PvZGame;
- 
